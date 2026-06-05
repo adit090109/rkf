@@ -1,4 +1,4 @@
-name: Build APK with Docker
+name: Build APK
 
 on:
   push:
@@ -7,32 +7,84 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
-    container:
-      image: enricostn/docker-buildozer:latest
+    runs-on: ubuntu-22.04
 
     steps:
-    - name: Checkout
+    - name: Checkout code
       uses: actions/checkout@v4
       
+    - name: Install dependencies
+      run: |
+        sudo apt update
+        sudo apt install -y \
+          git zip unzip openjdk-17-jdk \
+          python3-pip autoconf libtool pkg-config \
+          zlib1g-dev libncurses5-dev libncursesw5-dev \
+          libtinfo5 cmake libffi-dev libssl-dev \
+          wget curl
+          
+    - name: Install Cython and Buildozer
+      run: |
+        pip3 install --upgrade pip
+        pip3 install cython==0.29.33
+        pip3 install buildozer
+        
+    - name: Create buildozer.spec if not exists
+      run: |
+        if [ ! -f buildozer.spec ]; then
+          buildozer init
+        fi
+        
+    - name: FORCE ACCEPT ALL ANDROID SDK LICENSES
+      run: |
+        # Buat folder SDK
+        mkdir -p ~/.buildozer/android/platform/android-sdk
+        mkdir -p ~/.android
+        
+        # File konfigurasi biar gak minta interaktif
+        echo "count=0" > ~/.android/repositories.cfg
+        
+        # Download sdkmanager jika belum ada
+        if [ ! -f ~/.buildozer/android/platform/android-sdk/tools/bin/sdkmanager ]; then
+          wget -O /tmp/sdk-tools.zip https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip
+          unzip -q /tmp/sdk-tools.zip -d ~/.buildozer/android/platform/android-sdk/
+          mv ~/.buildozer/android/platform/android-sdk/cmdline-tools ~/.buildozer/android/platform/android-sdk/tools
+        fi
+        
+        # Accept semua license secara paksa (non-interaktif)
+        yes | ~/.buildozer/android/platform/android-sdk/tools/bin/sdkmanager --licenses > /dev/null 2>&1 || true
+        
+        # Install build-tools yang diperlukan
+        ~/.buildozer/android/platform/android-sdk/tools/bin/sdkmanager "build-tools;30.0.3" > /dev/null 2>&1 || true
+        ~/.buildozer/android/platform/android-sdk/tools/bin/sdkmanager "platform-tools" > /dev/null 2>&1 || true
+        ~/.buildozer/android/platform/android-sdk/tools/bin/sdkmanager "platforms;android-30" > /dev/null 2>&1 || true
+        
+        echo "License acceptance completed"
+        
     - name: Build APK
       run: |
-        buildozer android debug
+        # Set environment
+        export JAVA_OPTS="-Xmx2048m"
+        export GRADLE_OPTS="-Xmx2048m"
+        
+        # Build dengan verbose
+        ~/.local/bin/buildozer -v android debug
+        
+        # Cek hasil
+        ls -la bin/ || echo "No bin folder"
+        find . -name "*.apk" 2>/dev/null || echo "No APK found"
         
     - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
         name: router-killer-apk
-        path: /home/user/hostaction/bin/*.apk
+        path: |
+          ./bin/*.apk
+          ./*.apk
+        retention-days: 7
       continue-on-error: true
       
-    - name: Fallback find APK
-      if: always()
-      run: |
-        find / -name "*.apk" 2>/dev/null
-        ls -la /home/user/hostaction/bin/ || echo "not found"
-        
-    - name: Upload fallback
+    - name: Fallback - Upload entire folder
       if: always()
       uses: actions/upload-artifact@v4
       with:
