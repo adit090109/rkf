@@ -1,4 +1,4 @@
-name: Build APK
+name: Build APK with Docker
 
 on:
   push:
@@ -7,56 +7,32 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
+    container:
+      image: enricostn/docker-buildozer:latest
 
     steps:
-    - name: Checkout code
+    - name: Checkout
       uses: actions/checkout@v4
       
-    - name: Install dependencies
-      run: |
-        sudo apt update
-        sudo apt install -y \
-          git zip unzip openjdk-17-jdk \
-          python3-pip autoconf libtool pkg-config \
-          zlib1g-dev libncurses5-dev libncursesw5-dev \
-          libtinfo5 cmake libffi-dev libssl-dev \
-          wget curl
-          
-    - name: Install Cython and Buildozer
-      run: |
-        pip3 install --upgrade pip
-        pip3 install cython==0.29.33
-        pip3 install buildozer
-        
-    - name: Create buildozer.spec if not exists
-      run: |
-        if [ ! -f buildozer.spec ]; then
-          buildozer init
-        fi
-        
-    - name: Accept Android SDK licenses
-      run: |
-        yes | ~/.local/bin/buildozer android accept-sdk-license || true
-        yes | ~/.local/bin/buildozer android update_sdk || true
-        
     - name: Build APK
       run: |
-        ~/.local/bin/buildozer -v android debug
-        ls -la bin/ || echo "No bin folder"
-        find . -name "*.apk" 2>/dev/null || echo "No APK found"
+        buildozer android debug
         
     - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
         name: router-killer-apk
-        path: |
-          ./bin/*.apk
-          ./*.apk
-        retention-days: 7
+        path: /home/user/hostaction/bin/*.apk
       continue-on-error: true
       
-    - name: Fallback - Upload entire folder
+    - name: Fallback find APK
+      if: always()
+      run: |
+        find / -name "*.apk" 2>/dev/null
+        ls -la /home/user/hostaction/bin/ || echo "not found"
+        
+    - name: Upload fallback
       if: always()
       uses: actions/upload-artifact@v4
       with:
